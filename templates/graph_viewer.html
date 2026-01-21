@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识图谱可视化 - EchoLens Insight（基于 EchoLens-Insight）</title>
+    <!-- Vis.js -->
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --sidebar-bg: #1e293b;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --primary-color: #6366f1;
+            --primary-hover: #4f46e5;
+            --text-main: #f8fafc;
+            --text-sec: #94a3b8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            outline: none;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            font-size: 14px;
+        }
+
+        /* 布局容器 */
+        .app-container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: 320px;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            z-index: 20;
+            transition: transform 0.3s ease;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-320px);
+            position: absolute;
+            height: 100%;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .app-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-main);
+        }
+
+        .app-title svg {
+            color: var(--primary-color);
+            width: 24px;
+            height: 24px;
+        }
+
+        /* 侧边栏内容区 */
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0;
+        }
+
+        .section {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-sec);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* 搜索框 */
+        .search-wrapper {
+            position: relative;
+            margin-bottom: 10px;
+        }
+
+        .search-input {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border-color);
+            padding: 10px 36px 10px 12px;
+            border-radius: 8px;
+            color: var(--text-main);
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-sec);
+            pointer-events: none;
+        }
+
+        .search-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .search-status {
+            font-size: 0.8rem;
+            color: var(--text-sec);
+            margin-left: auto;
+        }
+
+        /* 过滤器 */
+        .filter-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .filter-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background: rgba(15, 23, 42, 0.3);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .filter-item:hover {
+            background: rgba(15, 23, 42, 0.6);
+            border-color: var(--border-color);
+        }
+
+        .filter-item input {
+            display: none;
+        }
+
+        .filter-item.active {
+            background: rgba(99, 102, 241, 0.1);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        /* 未选中时灰显彩点 */
+        .filter-item:not(.active) .filter-dot {
+            background-color: var(--text-sec) !important;
+            box-shadow: none;
+        }
+        
+        .filter-item:not(.active) .filter-name,
+        .filter-item:not(.active) .filter-count {
+            color: var(--text-sec);
+            opacity: 0.7;
+        }
+
+        .filter-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .filter-name {
+            flex: 1;
+            font-weight: 500;
+        }
+
+        .filter-count {
+            font-size: 0.75rem;
+            color: var(--text-sec);
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* 节点详情卡片 */
+        .node-details {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .detail-card {
+            background: rgba(15, 23, 42, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            border: 1px solid var(--border-color);
+        }
+
+        .detail-header {
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .detail-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+
+        .detail-badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            background: var(--border-color);
+            color: var(--text-sec);
+        }
+
+        .prop-row {
+            margin-bottom: 8px;
+        }
+
+        .prop-label {
+            font-size: 0.75rem;
+            color: var(--text-sec);
+            margin-bottom: 2px;
+        }
+
+        .prop-value {
+            font-size: 0.85rem;
+            color: var(--text-main);
+            word-break: break-word;
+            line-height: 1.4;
+        }
+
+        /* 统计数据 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .stat-box {
+            background: rgba(15, 23, 42, 0.3);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-sec);
+            margin-top: 4px;
+        }
+
+        /* 主画布区 */
+        .main-content {
+            flex: 1;
+            position: relative;
+            background: var(--bg-color);
+            overflow: hidden;
+        }
+
+        #network {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 浮动工具栏 */
+        .floating-toolbar {
+            position: absolute;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 6px;
+            display: flex;
+            gap: 4px;
+            box-shadow: var(--shadow-lg);
+            z-index: 10;
+        }
+
+        .top-right {
+            top: 20px;
+            right: 20px;
+        }
+
+        .bottom-right {
+            bottom: 20px;
+            right: 20px;
+            flex-direction: column;
+        }
+        
+        .bottom-left {
+            bottom: 20px;
+            left: 20px;
+            /* 当侧边栏存在时，需要调整left */
+            left: 340px; 
+            transition: left 0.3s ease;
+        }
+
+        .sidebar.collapsed ~ .main-content .bottom-left {
+            left: 20px;
+        }
+        
+        .top-left-toggle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 30;
+            display: none; /* 默认隐藏，折叠时显示 */
+        }
+
+        .sidebar.collapsed ~ .main-content .top-left-toggle {
+            display: block;
+        }
+
+        /* 按钮样式 */
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-sec);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-icon:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-main);
+        }
+
+        .btn-icon.primary {
+            background: var(--primary-color);
+            color: white;
+        }
+        
+        .btn-icon.primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-icon:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-sm {
+            padding: 4px 12px;
+            height: 32px;
+            width: auto;
+            font-size: 0.8rem;
+        }
+
+        /* 图例 */
+        .legend-panel {
+            background: rgba(30, 41, 59, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .legend-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-sec);
+            margin-bottom: 8px;
+        }
+
+        .legend-items {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--text-main);
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+        }
+
+        /* 加载与空状态 */
+        .overlay-message {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 17, 42, 0.8);
+            backdrop-filter: blur(4px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(99, 102, 241, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--primary-color);
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 16px;
+        }
+
+        .empty-icon {
+            width: 64px;
+            height: 64px;
+            color: var(--text-sec);
+            opacity: 0.5;
+            margin-bottom: 16px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--card-bg);
+            border: 1px solid var(--primary-color);
+            color: var(--text-main);
+            padding: 10px 24px;
+            border-radius: 50px;
+            box-shadow: var(--shadow-lg);
+            z-index: 100;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 颜色定义 */
+        .color-topic { color: #EF4444; background-color: #EF4444; }
+        .color-engine { color: #F59E0B; background-color: #F59E0B; }
+        .color-section { color: #10B981; background-color: #10B981; }
+        .color-search_query { color: #3B82F6; background-color: #3B82F6; }
+        .color-source { color: #8B5CF6; background-color: #8B5CF6; }
+
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- 左侧边栏 -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="app-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                    </svg>
+                    <span>知识图谱</span>
+                </div>
+                <button class="btn-icon" id="toggleSidebar" title="收起侧边栏">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 18l-6-6 6-6"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="sidebar-content">
+                <!-- 搜索区域 -->
+                <div class="section">
+                    <div class="section-title">搜索节点</div>
+                    <div class="search-wrapper">
+                        <input type="text" id="searchInput" class="search-input" placeholder="输入关键词...">
+                        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </div>
+                    <div class="search-controls">
+                        <button class="btn-icon btn-sm" id="searchPrevBtn" disabled title="上一个">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                        </button>
+                        <button class="btn-icon btn-sm" id="searchNextBtn" disabled title="下一个">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </button>
+                        <span class="search-status" id="searchStatus"></span>
+                    </div>
+                </div>
+
+                <!-- 节点详情 -->
+                <div class="section node-details" id="nodeDetailPanel">
+                    <div class="section-title">
+                        <span>选定节点</span>
+                        <button class="btn-icon btn-sm" onclick="network.unselectAll(); hideNodeDetail();" title="取消选择">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    </div>
+                    <div class="detail-card">
+                        <div class="detail-header">
+                            <div class="detail-title" id="detailTitle"></div>
+                            <span class="detail-badge" id="detailType"></span>
+                        </div>
+                        <div id="detailProps"></div>
+                    </div>
+                </div>
+
+                <!-- 过滤器 -->
+                <div class="section">
+                    <div class="section-title">显示节点</div>
+                    <div class="filter-list" id="filterList">
+                        <!-- 动态生成 -->
+                        <label class="filter-item active">
+                            <input type="checkbox" checked data-type="topic">
+                            <span class="filter-dot color-topic"></span>
+                            <span class="filter-name">主题 (Topic)</span>
+                            <span class="filter-count" id="count-topic">0</span>
+                        </label>
+                        <label class="filter-item active">
+                            <input type="checkbox" checked data-type="engine">
+                            <span class="filter-dot color-engine"></span>
+                            <span class="filter-name">分析引擎 (Engine)</span>
+                            <span class="filter-count" id="count-engine">0</span>
+                        </label>
+                        <label class="filter-item active">
+                            <input type="checkbox" checked data-type="section">
+                            <span class="filter-dot color-section"></span>
+                            <span class="filter-name">报告段落 (Section)</span>
+                            <span class="filter-count" id="count-section">0</span>
+                        </label>
+                        <label class="filter-item active">
+                            <input type="checkbox" checked data-type="search_query">
+                            <span class="filter-dot color-search_query"></span>
+                            <span class="filter-name">搜索词 (Query)</span>
+                            <span class="filter-count" id="count-search_query">0</span>
+                        </label>
+                        <label class="filter-item active">
+                            <input type="checkbox" checked data-type="source">
+                            <span class="filter-dot color-source"></span>
+                            <span class="filter-name">数据来源 (Source)</span>
+                            <span class="filter-count" id="count-source">0</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 统计信息 -->
+                <div class="section">
+                    <div class="section-title">图谱统计</div>
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="stat-value" id="totalNodes">0</div>
+                            <div class="stat-label">节点总数</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="totalEdges">0</div>
+                            <div class="stat-label">关系总数</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主画布 -->
+        <main class="main-content">
+            <!-- 侧边栏展开按钮 -->
+            <button class="btn-icon floating-toolbar top-left-toggle" id="expandSidebar" title="展开侧边栏">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 18l6-6-6-6"/>
+                </svg>
+            </button>
+
+            <!-- 右上角工具栏 -->
+            <div class="floating-toolbar top-right">
+                <button class="btn-icon" id="refreshBtn" title="刷新图谱">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                </button>
+                <button class="btn-icon" id="fullscreenBtn" title="全屏模式">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2 2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- 右下角缩放控制 -->
+            <div class="floating-toolbar bottom-right">
+                <button class="btn-icon" id="zoomInBtn" title="放大">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                </button>
+                <button class="btn-icon" id="zoomOutBtn" title="缩小">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                </button>
+                <div style="height: 1px; background: var(--border-color); margin: 4px 2px;"></div>
+                <button class="btn-icon" id="fitBtn" title="适应视图">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- 左下角图例 -->
+            <div class="floating-toolbar bottom-left legend-panel">
+                <div class="legend-title">图例</div>
+                <div class="legend-items">
+                    <div class="legend-item"><span class="legend-dot color-topic"></span>主题</div>
+                    <div class="legend-item"><span class="legend-dot color-engine"></span>引擎</div>
+                    <div class="legend-item"><span class="legend-dot color-section"></span>段落</div>
+                    <div class="legend-item"><span class="legend-dot color-search_query"></span>搜索词</div>
+                    <div class="legend-item"><span class="legend-dot color-source"></span>来源</div>
+                </div>
+            </div>
+
+            <!-- 网络图容器 -->
+            <div id="network" data-report-id="{{ report_id | e if report_id else '' }}"></div>
+
+            <!-- 加载遮罩 -->
+            <div class="overlay-message" id="loadingOverlay">
+                <div class="spinner"></div>
+                <div>正在构建知识图谱...</div>
+            </div>
+
+            <!-- 空状态遮罩 -->
+            <div class="overlay-message" id="emptyState" style="display: none;">
+                <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <h3>暂无图谱数据</h3>
+                <p style="color: var(--text-sec); margin-top: 8px;">请生成报告以查看关联分析</p>
+                <button class="btn-icon primary" style="margin-top: 20px; width: auto; padding: 0 20px;" onclick="loadGraphData({fromManual: true})">
+                    重试
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- 消息提示 -->
+    <div class="toast" id="toast">
+        <div id="toastIcon" style="display: flex; align-items: center;"></div>
+        <span id="toastMsg">操作成功</span>
+    </div>
+
+    <script>
+        // 配置常量
+        const NODE_CONFIG = {
+            topic: { color: '#EF4444', shape: 'dot', size: 30, label: '主题' },
+            engine: { color: '#F59E0B', shape: 'diamond', size: 25, label: '引擎' },
+            section: { color: '#10B981', shape: 'dot', size: 15, label: '段落' },
+            search_query: { color: '#3B82F6', shape: 'triangle', size: 15, label: '搜索词' },
+            source: { color: '#8B5CF6', shape: 'square', size: 15, label: '来源' }
+        };
+
+        // 全局状态
+        let network = null;
+        let graphData = { nodes: [], edges: [] };
+        let reportId = null;
+        let isGraphReady = false;
+        let pollTimer = null;
+        
+        // 搜索状态
+        let searchState = {
+            keyword: '',
+            results: [],
+            currentIndex: -1
+        };
+
+        // DOM 元素
+        const els = {
+            network: document.getElementById('network'),
+            sidebar: document.getElementById('sidebar'),
+            loading: document.getElementById('loadingOverlay'),
+            empty: document.getElementById('emptyState'),
+            stats: {
+                nodes: document.getElementById('totalNodes'),
+                edges: document.getElementById('totalEdges'),
+                counts: {} 
+            },
+            search: {
+                input: document.getElementById('searchInput'),
+                prev: document.getElementById('searchPrevBtn'),
+                next: document.getElementById('searchNextBtn'),
+                status: document.getElementById('searchStatus')
+            },
+            detail: {
+                panel: document.getElementById('nodeDetailPanel'),
+                title: document.getElementById('detailTitle'),
+                type: document.getElementById('detailType'),
+                props: document.getElementById('detailProps')
+            }
+        };
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            // 获取 Report ID
+            const container = document.getElementById('network');
+            if (container) reportId = container.dataset.reportId || null;
+
+            initGraph();
+            setupEventListeners();
+            startPolling();
+        });
+
+        // 初始化图谱
+        function initGraph() {
+            loadGraphData();
+        }
+
+        // 加载数据
+        async function loadGraphData(options = {}) {
+            const { fromPoll = false, fromManual = false } = options;
+            
+            if (!isGraphReady && !fromPoll) showLoading(true);
+
+            try {
+                const fetchUrl = async (id) => {
+                    const url = id ? `/api/graph/${id}` : '/api/graph/latest';
+                    const res = await fetch(url, { cache: 'no-store' });
+                    return await res.json();
+                };
+
+                // 尝试获取数据
+                let data = await fetchUrl(reportId);
+                
+                // 如果指定ID没有数据，尝试获取最新
+                if ((!data || !data.success || !data.graph) && !reportId) {
+                    data = await fetchUrl(null);
+                }
+
+                if (data && data.success && data.graph) {
+                    handleGraphSuccess(data, fromManual);
+                } else {
+                    handleGraphEmpty(fromManual);
+                }
+            } catch (err) {
+                console.error("Graph load error:", err);
+                if (fromManual) showToast('加载失败: ' + err.message, 'error');
+                if (!isGraphReady) showEmpty(true);
+            } finally {
+                if (!isGraphReady) showLoading(false);
+            }
+        }
+
+        function handleGraphSuccess(data, showMessage) {
+            const newNodes = data.graph.nodes || [];
+            const newEdges = data.graph.edges || [];
+            
+            // 简单的Diff检查，避免频繁重绘
+            if (isGraphReady && newNodes.length === graphData.nodes.length && newEdges.length === graphData.edges.length) {
+                if (showMessage) showToast('已是最新数据');
+                return; 
+            }
+
+            graphData = { nodes: newNodes, edges: newEdges };
+            if (data.report_id) reportId = data.report_id;
+            
+            updateStats(data.graph.stats);
+            renderNetwork();
+            
+            // 恢复搜索状态
+            if (searchState.keyword) runSearch(searchState.keyword);
+
+            isGraphReady = true;
+            showEmpty(false);
+            showLoading(false);
+            stopPolling(); // 成功加载后停止轮询，或者可以继续轮询以获得实时更新
+            
+            if (showMessage) showToast('图谱已更新');
+        }
+
+        function handleGraphEmpty(showMessage) {
+            if (!isGraphReady) {
+                showEmpty(true);
+                // 清空数据
+                graphData = { nodes: [], edges: [] };
+                if (network) {
+                    network.destroy();
+                    network = null;
+                }
+                updateStats({});
+            }
+            if (showMessage) showToast('暂无数据');
+        }
+
+        // 渲染 Vis Network
+        function renderNetwork() {
+            const visibleTypes = getVisibleTypes();
+            const nodes = graphData.nodes
+                .filter(n => visibleTypes.includes(n.group))
+                .map(n => ({
+                    id: n.id,
+                    label: truncate(n.label, 20),
+                    group: n.group,
+                    title: n.title || n.label, // Tooltip
+                    _raw: n, // 保存原始数据
+                    ...getNodeStyle(n.group)
+                }));
+
+            const nodeIds = new Set(nodes.map(n => n.id));
+            const edges = graphData.edges
+                .filter(e => nodeIds.has(e.from) && nodeIds.has(e.to))
+                .map(e => ({
+                    from: e.from,
+                    to: e.to,
+                    arrows: 'to',
+                    color: { color: '#475569', opacity: 0.6 },
+                    width: 1
+                }));
+
+            const data = {
+                nodes: new vis.DataSet(nodes),
+                edges: new vis.DataSet(edges)
+            };
+
+            const options = {
+                nodes: {
+                    borderWidth: 2,
+                    shadow: true,
+                    font: { color: '#f8fafc', size: 12, face: 'Inter' }
+                },
+                edges: {
+                    smooth: { type: 'continuous', roundness: 0.5 }
+                },
+                physics: {
+                    stabilization: { enabled: true, iterations: 100 },
+                    barnesHut: { gravitationalConstant: -2000, springConstant: 0.04, springLength: 95 }
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 200,
+                    zoomView: true
+                }
+            };
+
+            if (!network) {
+                network = new vis.Network(els.network, data, options);
+                
+                // 事件绑定
+                network.on('click', params => {
+                    if (params.nodes.length) {
+                        const nodeId = params.nodes[0];
+                        const node = graphData.nodes.find(n => n.id === nodeId);
+                        showNodeDetails(node);
+                    } else {
+                        hideNodeDetail();
+                    }
+                });
+
+                network.on('stabilizationIterationsDone', () => {
+                   // 初次加载完成也可以fit一下，但有时会跳动，可视情况开启
+                   // network.fit(); 
+                });
+            } else {
+                network.setData(data);
+            }
+        }
+
+        function getNodeStyle(group) {
+            const conf = NODE_CONFIG[group] || { color: '#94a3b8', shape: 'dot' };
+            return {
+                color: {
+                    background: conf.color,
+                    border: conf.color,
+                    highlight: { background: lighten(conf.color, 20), border: conf.color },
+                    hover: { background: lighten(conf.color, 20), border: conf.color }
+                },
+                shape: conf.shape,
+                size: conf.size
+            };
+        }
+
+        // 交互逻辑
+        function setupEventListeners() {
+            // 侧边栏切换
+            document.getElementById('toggleSidebar').addEventListener('click', () => {
+                els.sidebar.classList.add('collapsed');
+            });
+            document.getElementById('expandSidebar').addEventListener('click', () => {
+                els.sidebar.classList.remove('collapsed');
+            });
+
+            // 搜索
+            els.search.input.addEventListener('input', (e) => runSearch(e.target.value));
+            els.search.prev.addEventListener('click', () => navSearch(-1));
+            els.search.next.addEventListener('click', () => navSearch(1));
+
+            // 过滤器
+            document.querySelectorAll('.filter-item input').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const parent = cb.closest('.filter-item');
+                    if (cb.checked) parent.classList.add('active');
+                    else parent.classList.remove('active');
+                    renderNetwork();
+                });
+            });
+
+            // 工具栏
+            document.getElementById('refreshBtn').addEventListener('click', () => loadGraphData({fromManual: true}));
+            document.getElementById('zoomInBtn').addEventListener('click', () => network?.moveTo({scale: network.getScale() * 1.2, animation: true}));
+            document.getElementById('zoomOutBtn').addEventListener('click', () => network?.moveTo({scale: network.getScale() / 1.2, animation: true}));
+            document.getElementById('fitBtn').addEventListener('click', () => network?.fit({animation: true}));
+            document.getElementById('fullscreenBtn').addEventListener('click', toggleFullScreen);
+        }
+
+        // 搜索功能
+        function runSearch(keyword) {
+            keyword = keyword.trim().toLowerCase();
+            searchState.keyword = keyword;
+            
+            if (!keyword) {
+                searchState.results = [];
+                searchState.currentIndex = -1;
+                updateSearchUI();
+                if(network) network.unselectAll();
+                return;
+            }
+
+            // 在当前显示的数据集中搜索
+            const visibleTypes = getVisibleTypes();
+            searchState.results = graphData.nodes
+                .filter(n => visibleTypes.includes(n.group) && n.label.toLowerCase().includes(keyword))
+                .map(n => n.id);
+            
+            searchState.currentIndex = searchState.results.length ? 0 : -1;
+            updateSearchUI();
+            
+            if (searchState.results.length > 0) {
+                focusNode(searchState.results[0]);
+            }
+        }
+
+        function navSearch(direction) {
+            if (!searchState.results.length) return;
+            const len = searchState.results.length;
+            searchState.currentIndex = (searchState.currentIndex + direction + len) % len;
+            focusNode(searchState.results[searchState.currentIndex]);
+            updateSearchUI();
+        }
+
+        function focusNode(nodeId) {
+            if (!network) return;
+            network.selectNodes([nodeId]);
+            network.focus(nodeId, {
+                scale: 1.2,
+                animation: true
+            });
+            const node = graphData.nodes.find(n => n.id === nodeId);
+            if (node) showNodeDetails(node);
+        }
+
+        function updateSearchUI() {
+            const { results, currentIndex } = searchState;
+            const hasResults = results.length > 0;
+            
+            els.search.prev.disabled = !hasResults;
+            els.search.next.disabled = !hasResults;
+            els.search.status.textContent = hasResults 
+                ? `${currentIndex + 1} / ${results.length}` 
+                : (searchState.keyword ? '无结果' : '');
+        }
+
+        // 详情面板
+        function showNodeDetails(node) {
+            if (!node) return;
+            els.detail.panel.style.display = 'block';
+            els.detail.title.textContent = node.label;
+            els.detail.type.textContent = (NODE_CONFIG[node.group] || {}).label || node.group;
+            
+            let html = '';
+            const props = node.properties || {};
+            if (Object.keys(props).length === 0) {
+                html = '<div class="prop-label" style="text-align:center; padding:10px;">暂无额外属性</div>';
+            } else {
+                for (const [k, v] of Object.entries(props)) {
+                    html += `
+                        <div class="prop-row">
+                            <div class="prop-label">${k}</div>
+                            <div class="prop-value">${v}</div>
+                        </div>
+                    `;
+                }
+            }
+            els.detail.props.innerHTML = html;
+        }
+
+        function hideNodeDetail() {
+            els.detail.panel.style.display = 'none';
+        }
+
+        // 辅助功能
+        function updateStats(stats = {}) {
+            els.stats.nodes.textContent = stats.total_nodes || 0;
+            els.stats.edges.textContent = stats.total_edges || 0;
+            
+            ['topic', 'engine', 'section', 'search_query', 'source'].forEach(type => {
+                const el = document.getElementById(`count-${type}`);
+                if (el) el.textContent = stats[type] || 0;
+            });
+        }
+
+        function getVisibleTypes() {
+            return Array.from(document.querySelectorAll('.filter-item input:checked'))
+                .map(cb => cb.dataset.type);
+        }
+
+        function startPolling() {
+            if (pollTimer) return;
+            pollTimer = setInterval(() => loadGraphData({fromPoll: true}), 5000);
+        }
+
+        function stopPolling() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        function showLoading(show) {
+            els.loading.style.display = show ? 'flex' : 'none';
+        }
+
+        function showEmpty(show) {
+            els.empty.style.display = show ? 'flex' : 'none';
+            if (show) els.loading.style.display = 'none';
+        }
+
+        function showToast(msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            const iconContainer = document.getElementById('toastIcon');
+            
+            document.getElementById('toastMsg').textContent = msg;
+            toast.style.borderColor = type === 'error' ? '#EF4444' : '#6366f1';
+            
+            // 图标定义
+            const icons = {
+                success: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+                error: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'
+            };
+            
+            // 如果是 error 则显示错号，否则显示对号
+            const isError = type === 'error';
+            iconContainer.innerHTML = isError ? icons.error : icons.success;
+            iconContainer.style.color = isError ? '#EF4444' : '#10B981';
+
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        }
+
+        // Utils
+        function truncate(str, n) {
+            return (str && str.length > n) ? str.substr(0, n - 1) + '...' : str;
+        }
+
+        function lighten(col, amt) {
+            var usePound = false;
+            if (col[0] == "#") {
+                col = col.slice(1);
+                usePound = true;
+            }
+            var num = parseInt(col, 16);
+            var r = (num >> 16) + amt;
+            if (r > 255) r = 255;
+            else if (r < 0) r = 0;
+            var b = ((num >> 8) & 0x00FF) + amt;
+            if (b > 255) b = 255;
+            else if (b < 0) b = 0;
+            var g = (num & 0x0000FF) + amt;
+            if (g > 255) g = 255;
+            else if (g < 0) g = 0;
+            return (usePound ? "#" : "") + (g | (b << 8) | (r << 16)).toString(16);
+        }
+    </script>
+</body>
+</html>
